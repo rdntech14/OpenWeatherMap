@@ -1,60 +1,63 @@
 #!/bin/bash
+verify_ipaddress() {
+    local ipaddress=$1
+    local
+    status=1
+    if [[ $ipaddress =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+        OIFS=$IFS
+        IFS='.'
+        iparr=($ipaddress)
+        [[ ${iparr[0]} -le 255 && ${iparr[1]} -le 255 && ${iparr[2]} -le 255 && ${iparr[3]} -le 255 ]]
+        status=$?
+    fi
+}
 
-echo "****************"
+getLatLonForIP() {
+    read latlon location < <(echo $(curl -s "ipinfo.io/${ip}" | jq -r '.loc, .city'))
+    IFS=','
+    read -a strarr <<<"$latlon"
+    # echo "lat : ${strarr[0]}, lon : ${strarr[1]} and location : ${location}"
+}
+
+getNextThreeDaysWeather() {
+
+    result=$(curl -k "https://api.openweathermap.org/data/2.5/onecall?lat=${strarr[0]}&lon=${strarr[1]}&appid=a95ce5898d5ed605589d10056a233619" >result.json)
+
+    echo $'\n-----------------------------------------------------------------------------\n'
+
+    echo "Weather forecast for ${ip} (${location}):"$'\n'
+
+    for i in 1 2 3; do
+        # date=$(date -r $(jq -r ".daily[$i] | .dt" result.json) +%Y-%m-%d)  # on local machine Mac
+        date=$(date -d @$(jq -r ".daily[$i] | .dt" result.json) +%Y-%m-%d) # on Debian docker image
+        weather_description=$(jq -r ".daily[$i] | .weather[0].description" result.json)
+        echo "$date:" $'\t' "$weather_description" "throughout the day."
+    done
+    echo $'\n-----------------------------------------------------------------------------'
+}
+
+echo "-----------------------------------------------------------------------------"
 if [ ! -z $ip ] || [ ! -z $1 ]; then
-    echo "not empty"
     if [ ! -z $ip ]; then
-        echo "ip assigned from DOCKER env variable"
+        echo "ip passed from docker env variable ip"
     fi
     if [ ! -z $1 ]; then
-        echo "ip assigned from shell command input"
+        echo "ip passed to shell script from command line argument"
         ip=$1
     fi
 
 else
-    echo "empty"
-    # ip="$(ifconfig | grep -A 1 'services1:' | tail -1 | cut -d ' ' -f 2)" # on Ubuntu
-    ip=$(ipconfig getifaddr en0) # on Mac
+    ip=$(dig @resolver4.opendns.com myip.opendns.com +short)
 fi
 
-# ip="12.165.188.173"
-echo "ip : ${ip}"
-echo "****************"
-
-if [ -z $ip ]; then
-    echo " no ip found"
-    exit 1
+verify_ipaddress $ip
+unset IFS
+if [ $status -ne 0 ]; then
+    echo "ip address is invalid"
+    exit
 fi
 
-getLatLonForIP() {
-    echo "in getLatLonForIP method and ip value is ${ip}"
-    read latlon location < <(echo $(curl -s "ipinfo.io/${ip}" | jq -r '.loc, .city'))
-    echo "latlon : ${latlon}"
-    echo "location : ${location}"
-
-    IFS=','
-    read -a strarr <<<"$latlon"
-    echo "lat : ${strarr[0]} "
-    echo "lon : ${strarr[1]} "
-}
+echo "your pulic ip : ${ip}"
 
 getLatLonForIP
-
-getnextThreeDaysWeather() {
-
-    result=$(curl -k "https://api.openweathermap.org/data/2.5/onecall?lat=${strarr[0]}&lon=${strarr[1]}&appid=bf55d112094f7fc0490dbc70db1cb5a2" >result.json)
-
-    echo "------------"
-
-    echo "Weather forecast for ${ip} (${location}):"
-
-    for i in 1 2 3; do
-        # date=$(date -r $(jq -r  ".daily[$i] | .dt" result.json)  +%Y-%m-%d)
-        date=$(date -d @$(jq -r ".daily[$i] | .dt" result.json) +%Y-%m-%d)
-        weather_description=$(jq -r ".daily[$i] | .weather[0].description" result.json)
-        echo $date: $weather_description "throughout the day."
-    done
-
-}
-
-getnextThreeDaysWeather
+getNextThreeDaysWeather
